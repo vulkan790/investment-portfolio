@@ -52,7 +52,6 @@ python main.py
 ├── main_window.ui       # Файл интерфейса Qt Designer
 ├── tickers              # Список тикеров (15 российских компаний)
 ├── portfolio_graph.png  # Пример сохранённого графика
-├── data/                # Папка с CSV-файлами котировок и дивидендов
 └── README.md            # Документация
 ```
 
@@ -130,7 +129,6 @@ python main.py
 ├── main_window.ui        # Qt Designer interface file
 ├── tickers               # Ticker list (15 Russian companies)
 ├── portfolio_graph.png   # Example of a saved chart
-├── data/                 # Folder with price and dividend CSV files
 └── README.md             # Documentation
 ```
 
