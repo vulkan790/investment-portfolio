@@ -1,0 +1,228 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MainWindow</class>
+ <widget class="QMainWindow" name="MainWindow">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>800</width>
+    <height>700</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Инвестиционный портфель</string>
+  </property>
+  <widget class="QWidget" name="centralwidget">
+   <layout class="QVBoxLayout" name="verticalLayout_main">
+    <item>
+     <widget class="QGroupBox" name="groupBoxParams">
+      <property name="title">
+       <string>Параметры портфеля</string>
+      </property>
+      <layout class="QVBoxLayout" name="verticalLayout_params">
+       <!-- Тикер 1 -->
+       <item>
+        <widget class="QLabel" name="labelTicker1">
+         <property name="text">
+          <string>Тикер 1</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QComboBox" name="comboTicker1">
+         <property name="minimumSize">
+          <size>
+           <width>150</width>
+           <height>0</height>
+          </size>
+         </property>
+        </widget>
+       </item>
+       <!-- Тикер 2 -->
+       <item>
+        <widget class="QLabel" name="labelTicker2">
+         <property name="text">
+          <string>Тикер 2</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QComboBox" name="comboTicker2">
+         <property name="minimumSize">
+          <size>
+           <width>150</width>
+           <height>0</height>
+          </size>
+         </property>
+        </widget>
+       </item>
+       <!-- Тикер 3 -->
+       <item>
+        <widget class="QLabel" name="labelTicker3">
+         <property name="text">
+          <string>Тикер 3</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QComboBox" name="comboTicker3">
+         <property name="minimumSize">
+          <size>
+           <width>150</width>
+           <height>0</height>
+          </size>
+         </property>
+        </widget>
+       </item>
+       <!-- Тикер 4 -->
+       <item>
+        <widget class="QLabel" name="labelTicker4">
+         <property name="text">
+          <string>Тикер 4</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QComboBox" name="comboTicker4">
+         <property name="minimumSize">
+          <size>
+           <width>150</width>
+           <height>0</height>
+          </size>
+         </property>
+        </widget>
+       </item>
+       <!-- Тикер 5 -->
+       <item>
+        <widget class="QLabel" name="labelTicker5">
+         <property name="text">
+          <string>Тикер 5</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QComboBox" name="comboTicker5">
+         <property name="minimumSize">
+          <size>
+           <width>150</width>
+           <height>0</height>
+          </size>
+         </property>
+        </widget>
+       </item>
+       <!-- Ежемесячный взнос -->
+       <item>
+        <widget class="QLabel" name="labelMonthly">
+         <property name="text">
+          <string>Ежемесячный взнос</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QSpinBox" name="spinMonthly">
+         <property name="minimum">
+          <number>0</number>
+         </property>
+         <property name="maximum">
+          <number>1000000</number>
+         </property>
+         <property name="suffix">
+          <string> руб.</string>
+         </property>
+        </widget>
+       </item>
+       <!-- Строка статуса -->
+       <item>
+        <widget class="QLabel" name="labelStatus">
+         <property name="text">
+          <string>⚠ Выберите 5 уникальных тикеров</string>
+         </property>
+         <property name="styleSheet">
+          <string notr="true">color: #d35400;</string>
+         </property>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+    </item>
+
+    <item>
+     <layout class="QHBoxLayout" name="horizontalLayout_buttons">
+      <item>
+       <widget class="QPushButton" name="btnCalculate">
+        <property name="text">
+         <string>Рассчитать</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="btnSave">
+        <property name="text">
+         <string>Сохранить график</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <spacer name="horizontalSpacer">
+        <property name="orientation">
+         <enum>Qt::Horizontal</enum>
+        </property>
+        <property name="sizeHint" stdset="0">
+         <size>
+          <width>40</width>
+          <height>20</height>
+         </size>
+        </property>
+       </spacer>
+      </item>
+      <item>
+       <widget class="QLabel" name="labelTotal">
+        <property name="text">
+         <string>Итоговая стоимость: 0 руб.</string>
+        </property>
+        <property name="alignment">
+         <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </item>
+
+    <item>
+     <widget class="QGroupBox" name="groupBoxGraph">
+      <property name="title">
+       <string>График</string>
+      </property>
+      <layout class="QVBoxLayout" name="verticalLayout_graph">
+       <item>
+        <widget class="QWidget" name="graphWidget">
+         <property name="sizePolicy">
+          <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+           <horstretch>0</horstretch>
+           <verstretch>0</verstretch>
+          </sizepolicy>
+         </property>
+         <property name="minimumSize">
+          <size>
+           <width>0</width>
+           <height>200</height>
+          </size>
+         </property>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+    </item>
+   </layout>
+  </widget>
+
+  <widget class="QStatusBar" name="statusbar">
+   <property name="statusTip">
+    <string>Готово</string>
+   </property>
+  </widget>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
