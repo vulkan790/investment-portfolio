@@ -1,5 +1,6 @@
 import asyncio
 import aiohttp
+import numpy
 import csv
 from concurrent.futures import *
 from datetime import *
@@ -75,40 +76,70 @@ async def fetch_prices(session: aiohttp.ClientSession, ticker: str, semaphore: a
     return all_prices
 
 async def fetch_dividends(session: aiohttp.ClientSession, ticker: str) -> List[Tuple[str, float]]:
-    url = f"http://iss.moex.com/iss/securities/{ticker}/dividends.json"
+    url = f"https://iss.moex.com/iss/securities/{ticker}/dividends.json?iss.only=dividends"
+
     try:
         data = await fetch_json(session, url)
     except aiohttp.ClientResponseError as e:
         if e.status == 404:
             print(f"Дивиденды для {ticker} не найдены (404)")
             return []
-        raise
+        print(f"{ticker}: HTTP {e.status}")
+        return []
+    except Exception as e:
+        print(f"{ticker}: сетевая ошибка: {e}")
+        return []
 
-    div_data = data["dividends"]["data"]
-    columns = data["dividends"]["columns"]
+    if not isinstance(data, dict):
+        print(f"{ticker}: ответ не dict, а {type(data)}")
+        return []
+
+    if "dividends" not in data:
+        print(f"{ticker}: нет ключа 'dividends'. Ключи ответа: {list(data.keys())}")
+        return []
+
+    div_block = data["dividends"]
+    div_data = div_block.get("data") or []
+    columns = div_block.get("columns") or []
+
+    if not div_data:
+        print(f"{ticker}: секция dividends пуста")
+        return []
 
     try:
         date_index = columns.index("registryclosedate")
         value_index = columns.index("value")
     except ValueError:
-        print(f"Ошибка: неожиданная структура дивидентов для {ticker}")
+        print(f"{ticker}: неожиданные колонки: {columns}")
         return []
 
     result = []
     for row in div_data:
         date_str = row[date_index]
         value = row[value_index]
-
         if value is not None:
             result.append((date_str, float(value)))
 
     return result
 
 def save_csv_sync(filename: Path, data: List[Tuple], header: List[str]) -> None:
-    with open(filename, "w", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
-        writer.writerow(header)
-        writer.writerows(data)
+    if not data:
+        with open(filename, "w", newline="", encoding="utf-8") as f:
+            csv.writer(f).writerow(header)
+        return
+
+    first = data[0]
+    fmt = ",".join("%s" if isinstance(v, str) else "%.6g" for v in first)
+
+    arr = numpy.array(data, dtype=object)
+
+    try:
+        numpy.savetxt(filename, arr, delimiter=",", header=",".join(header), comments="", fmt=fmt, encoding="utf-8")
+    except TypeError:
+        with open(filename, "w", newline="", encoding="utf-8") as f:
+            w = csv.writer(f)
+            w.writerow(header)
+            w.writerows(data)
 
 async def save_csv_async(executor: ThreadPoolExecutor, filename: Path, data: List[Tuple], header: List[str]) -> None:
     loop = asyncio.get_running_loop()
@@ -133,28 +164,24 @@ async def process_ticker(session: aiohttp.ClientSession, executor: ThreadPoolExe
     except Exception as e:
         print(f"Непредвиденная ошибка при обработке {ticker}: {e}")
 
-def calc_total_return(prices_dict: dict, dividends_dict: dict, dates: list) -> List[Tuple[date, float, float, float]]:
-    shares = 1.0
-    pending_divs = {}
-    result = []
+def calc_total_return(prices: numpy.ndarray, dividends: numpy.ndarray, dates: numpy.ndarray) -> numpy.ndarray:
+    T = len(dates)
+    shares = numpy.ones(T, dtype=numpy.float64)
+    pending = numpy.zeros(T, dtype=numpy.float64)
 
-    for i, cur_date in enumerate(dates):
-        if cur_date in pending_divs:
-            cash = pending_divs.pop(cur_date)
-            shares += cash / prices_dict[cur_date]
+    for i in range(1, T):
+        if i >= 8:
+            shares[i] = shares[i - 1] + pending[i - 8] / prices[i]
+        else:
+            shares[i] = shares[i - 1]
 
-        if cur_date in dividends_dict:
-            total_div = shares * dividends_dict[cur_date]
-            if (i + 8) < len(dates):
-                credit_date = dates[i + 8]
-                pending_divs[credit_date] = pending_divs.get(credit_date, 0.0) + total_div
-        result.append((cur_date, prices_dict[cur_date], shares, shares * prices_dict[cur_date]))
+        if dividends[i] > 0 and i + 8 < T:
+            pending[i + 8] += shares[i] * dividends[i]
 
-    return result
+    return numpy.column_stack([dates.astype(str), prices, shares, shares * prices])
 
-def load_prices(ticker: str) -> Tuple[dict, list]:
-    prices_dict = {}
-    dates = []
+def load_prices(ticker: str) -> Tuple[numpy.ndarray, numpy.ndarray]:
+    dates, prices = [], []
     file_path = f"data/{ticker}_prices.csv"
 
     with open(file_path, "r", newline="", encoding="utf-8") as f:
@@ -162,19 +189,16 @@ def load_prices(ticker: str) -> Tuple[dict, list]:
         next(reader)
 
         for row in reader:
-            date_str = row[0]
-            price_str = row[1]
+            dates.append(row[0])
+            prices.append(float(row[1]))
 
-            date_obj = datetime.strptime(date_str, "%Y-%m-%d").date()
-            price_obj = float(price_str)
+    return (
+        numpy.array(dates, dtype="datetime64[D]"),
+        numpy.array(prices, dtype=numpy.float64)
+    )
 
-            prices_dict[date_obj] = price_obj
-            dates.append(date_obj)
-
-    return prices_dict, dates
-
-def load_dividends(ticker: str) -> dict:
-    dividends_dict = {}
+def load_dividends(ticker: str) -> Tuple[numpy.ndarray, numpy.ndarray]:
+    dates, value = [], []
     file_path = f"data/{ticker}_dividends.csv"
 
     try:
@@ -183,96 +207,124 @@ def load_dividends(ticker: str) -> dict:
             next(reader)
 
             for row in reader:
-                date_str = row[0]
-                dividends_str = row[1]
+                dates.append(row[0])
+                value.append(float(row[1]))
 
-                date_obj = datetime.strptime(date_str, "%Y-%m-%d").date()
-                dividends_obj = float(dividends_str)
-
-                dividends_dict[date_obj] = dividends_obj
-
-        return dividends_dict
     except FileNotFoundError:
-        return {}
+        return (
+            numpy.array([], dtype="datetime64[D]"),
+            numpy.array([], dtype=numpy.float64)
+        )
 
-def load_ticker_data(ticker: str) -> Tuple[str, Dict[date, float], List[date], Dict[date, float]]:
-    prices_dict, dates = load_prices(ticker)
-    dividends_dict = load_dividends(ticker)
-    return ticker, prices_dict, dates, dividends_dict
+    d = numpy.array(dates, dtype="datetime64[D]")
+    v = numpy.array(value, dtype=numpy.float64)
 
-async def build_common_calendar(tickers: list, executor: ThreadPoolExecutor) -> Tuple[List[date], Dict[str, Dict[date, float]], Dict[str, Dict[date, float]]]:
+    order = numpy.argsort(d)
+    return d[order], v[order]
+
+def load_ticker_data(ticker: str) -> Tuple[str, numpy.ndarray, numpy.ndarray, numpy.ndarray, numpy.ndarray]:
+    dates, prices = load_prices(ticker)
+    div_dates, div_values = load_dividends(ticker)
+    return ticker, dates, prices, div_dates, div_values
+
+async def build_common_calendar(tickers: list, executor: ThreadPoolExecutor) -> Tuple[numpy.ndarray, numpy.ndarray, numpy.ndarray]:
     loop = asyncio.get_running_loop()
     tasks = [loop.run_in_executor(executor, load_ticker_data, t) for t in tickers]
     results = await asyncio.gather(*tasks)
 
-    prices: Dict[str, Dict[date, float]] = {}
-    dividends: Dict[str, Dict[date, float]] = {}
-    all_date_sets: List[Set[date]] = []
+    if not results:
+        return (
+            numpy.array([], dtype="datetime64[D]"),
+            numpy.zeros((0, len(tickers)), dtype=numpy.float64),
+            numpy.zeros((0, len(tickers)), dtype=numpy.float64),
+        )
 
-    for ticker, p_dict, d_list, div_dict in results:
-        prices[ticker] = p_dict
-        dividends[ticker] = div_dict
-        all_date_sets.append(set(d_list))
+    all_dates = [r[1] for r in results]
 
-    if not all_date_sets:
-        return [], prices, dividends
+    common = all_dates[0]
+    for d in all_dates[1:]:
+        common = numpy.intersect1d(common, d)
 
-    common_data_set = all_date_sets[0].intersection(*all_date_sets[1:])
-    common_data = sorted(common_data_set)
+    T = len(common)
+    N = len(tickers)
+    price_mat = numpy.zeros((T, N), dtype=numpy.float64)
+    div_mat = numpy.zeros((T, N), dtype=numpy.float64)
 
-    return common_data, prices, dividends
+    for j, (_, dates, p_arr, div_dates, div_values) in enumerate(results):
+        idx = numpy.searchsorted(dates, common)
+        idx_c = numpy.clip(idx, 0, len(dates) - 1)
+        valid = (idx < len(dates)) & (dates[idx_c] == common)
+        price_mat[valid, j] = p_arr[idx[valid]]
 
+        if len(div_dates) > 0:
+            idx_d = numpy.searchsorted(div_dates, common)
+            idx_dc = numpy.clip(idx_d, 0, len(div_dates) - 1)
+            valid_d = (idx_d < len(div_dates)) & (div_dates[idx_dc] == common)
+            div_mat[valid_d, j] = div_values[idx_d[valid_d]]
 
-def build_common_calendar_sync(tickers: List[str]) -> Tuple[
-    List[date], Dict[str, Dict[date, float]], Dict[str, Dict[date, float]]]:
-    prices: Dict[str, Dict[date, float]] = {}
-    dividends: Dict[str, Dict[date, float]] = {}
-    all_date_sets: List[set] = []
+    return common, price_mat, div_mat
 
+def build_common_calendar_sync(tickers: List[str]) -> Tuple[numpy.ndarray, numpy.ndarray, numpy.ndarray]:
+    loaded = []
+    all_dates = []
     for t in tickers:
-        _, p_dict, d_list, div_dict = load_ticker_data(t)
-        prices[t] = p_dict
-        dividends[t] = div_dict
-        all_date_sets.append(set(d_list))
+        _, dates, p_arr, div_dates, div_values = load_ticker_data(t)
+        loaded.append((t, dates, p_arr, div_dates, div_values))
+        all_dates.append(dates)
 
-    if not all_date_sets:
-        return [], prices, dividends
+    if not all_dates:
+        return (
+            numpy.array([], dtype="datetime64[D]"),
+            numpy.zeros((0, len(tickers)), dtype=numpy.float64),
+            numpy.zeros((0, len(tickers)), dtype=numpy.float64),
+        )
 
-    common = all_date_sets[0].intersection(*all_date_sets[1:])
-    return sorted(common), prices, dividends
+    common = all_dates[0]
+    for d in all_dates[1:]:
+        common = numpy.intersect1d(common, d)
 
-def simulate_portfolio(common_data: List[date], prices: Dict[str, Dict[date, float]], dividends: Dict[str, Dict[date, float]], tickers: List[str], monthly_amount: float) -> List[Tuple[date, float, float]]:
-    topup_dates = set()
-    current_month = None
+    T = len(common)
+    N = len(tickers)
 
-    for data in common_data:
-        month_key = (data.year, data.month)
-        if month_key != current_month:
-            topup_dates.add(data)
-            current_month = month_key
+    price_mat = numpy.zeros((T, N), dtype=numpy.float64)
+    div_mat = numpy.zeros((T, N), dtype=numpy.float64)
 
-    shares = {t: 0.0 for t in tickers}
-    pending_divs = {t: {} for t in tickers}
+    for j, (t, dates, p_arr, div_dates, div_values) in enumerate(loaded):
+        idx = numpy.searchsorted(dates, common)
+        idx_c = numpy.clip(idx, 0, len(dates) - 1)
+        valid = (idx < len(dates)) & (dates[idx_c] == common)
+        price_mat[valid, j] = p_arr[idx[valid]]
+
+        if len(div_dates) > 0:
+            idx_d = numpy.searchsorted(div_dates, common)
+            idx_dc = numpy.clip(idx_d, 0, len(div_dates) - 1)
+            valid_d = (idx_d < len(div_dates)) & (div_dates[idx_dc] == common)
+            div_mat[valid_d, j] = div_values[idx_d[valid_d]]
+
+    return common, price_mat, div_mat
+
+def simulate_portfolio(common_data: numpy.ndarray, price_mat: numpy.ndarray, div_mat: numpy.ndarray, tickers: List[str], monthly_amount: float) -> Tuple[numpy.ndarray, numpy.ndarray]:
+    T, N = price_mat.shape
+    assert len(common_data) == T, "common_data и price_mat рассинхронизированы"
+
+    months = common_data.astype("datetime64[M]")
+    topup = numpy.concatenate(([True], months[1:] != months[:-1]))
+
+    shares = numpy.zeros(N, dtype=numpy.float64)
+    pending = numpy.zeros((T, N), dtype=numpy.float64)
     total_invested = 0.0
-    result = []
+    result = numpy.zeros((T, 3), dtype=numpy.float64)
 
-    for i, data in enumerate(common_data):
-        if data in topup_dates:
-            amount_per_company = monthly_amount / len(tickers)
-            for t in tickers:
-                shares[t] += amount_per_company / prices[t][data]
+    for i in range(T):
+        if topup[i]:
+            shares += (monthly_amount / N) / price_mat[i]
             total_invested += monthly_amount
 
-        for t in tickers:
-            if data in pending_divs[t]:
-                shares[t] += pending_divs[t].pop(data) / prices[t][data]
-            if data in dividends[t]:
-                div_amount = shares[t] * dividends[t][data]
-                if (i + 8) < len(common_data):
-                    credit_data = common_data[i + 8]
-                    pending_divs[t][credit_data] = pending_divs[t].get(credit_data, 0.0) + div_amount
+        if i >= 8:
+            shares += pending[i - 8] / price_mat[i]
+        if i + 8 < T:
+            pending[i + 8] += shares * div_mat[i]
 
-        total_value = sum(shares[t] * prices[t][data] for t in tickers)
-        result.append((data, total_value, total_invested))
+        result[i] = (i, shares @ price_mat[i], total_invested)
 
-    return result
+    return common_data, result

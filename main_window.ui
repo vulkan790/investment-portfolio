@@ -157,6 +157,13 @@
        </widget>
       </item>
       <item>
+       <widget class="QPushButton" name="btnClear">
+        <property name="text">
+         <string>Очистить</string>
+        </property>
+       </widget>
+      </item>
+      <item>
        <widget class="QPushButton" name="btnSave">
         <property name="text">
          <string>Сохранить график</string>

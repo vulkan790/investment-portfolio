@@ -13,6 +13,7 @@
 ## Стек
 
 - **Python** - язык программирования
+- **NumPy** - вся математика портфеля (матрицы цен, матричное умножение и другие операции)
 - **aiohttp** - HTTP - запросы
 - **PyQt5 + Qt Designer** - GUI
 - **matplotlib** - графики
@@ -29,15 +30,12 @@ cd investment-portfolio
 ```
 
 2) Установить все требуемые зависимости
-3) Загрузить данные с MOEX (первый запуск)
 
 ```
-python core.py
+pip install aiohttp numpy matplotlib PyQt5
 ```
 
-Данные сохранятся в папку data/
-
-4) Запустить GUI
+3) Запустить GUI
 
 ```
 python main.py
@@ -51,9 +49,22 @@ python main.py
 ├── core.py              # Загрузка данных и расчёт портфеля
 ├── main_window.ui       # Файл интерфейса Qt Designer
 ├── tickers              # Список тикеров (15 российских компаний)
+├── portfolio_data.csv   # Пример сохранённой таблицы
 ├── portfolio_graph.png  # Пример сохранённого графика
 └── README.md            # Документация
 ```
+
+## Как устроено ядро (NumPy)
+
+- `build_common_calendar_sync` загружает все тикеры и выравнивает их по
+  общему торговому календарю через `numpy.intersect1d` + `numpy.searchsorted`.
+- На выходе - две матрицы: `price_mat (T, N)` и `div_mat (T, N)`.
+- `simulate_portfolio` итерирует по дням, использует:
+  - `numpy.concatenate` для маски ежемесячных пополнений,
+  - `@` (матричное умножение) для стоимости портфеля,
+  - broadcasting для реинвестирования дивидендов,
+  - `datetime64[M]` для определения первого торгового дня месяца.
+- Экспорт - `numpy.savetxt` с `dtype=object` для смешанных типов.
 
 ## Интерфейс
 
@@ -90,6 +101,7 @@ An educational service demonstrating the benefits of the "buy and hold" strategy
 ## Stack
 
 - **Python** - programming language
+- **NumPy** - all mathematics of the portfolio (price matrices, matrix multiplication and other operations)
 - **aiohttp** - HTTP requests
 - **PyQt5 + Qt Designer** - GUI
 - **matplotlib** - charts
@@ -106,15 +118,12 @@ cd investment-portfolio
 ```
 
 2) Install all required dependencies
-3) Download data from MOEX (first run)
 
 ```
-python core.py
+pip install aiohttp numpy matplotlib PyQt5
 ```
 
-Data will be saved to the `data/` folder.
-
-4) Launch the GUI
+3) Launch the GUI
 
 ```
 python main.py
@@ -128,9 +137,22 @@ python main.py
 ├── core.py               # Data loading and portfolio calculation
 ├── main_window.ui        # Qt Designer interface file
 ├── tickers               # Ticker list (15 Russian companies)
+├── portfolio_data.csv    # Example of a saved table
 ├── portfolio_graph.png   # Example of a saved chart
 └── README.md             # Documentation
 ```
+
+## NumPy core design
+
+- `build_common_calendar_sync` loads all tickers and aligns them to a
+  common trading calendar via `numpy.intersect1d` + `numpy.searchsorted`.
+- Returns two matrices: `price_mat (T, N)` and `div_mat (T, N)`.
+- `simulate_portfolio` iterates over days and uses:
+  - `numpy.concatenate` to build the monthly top-up mask,
+  - `@` (matrix multiplication) for portfolio value,
+  - broadcasting for dividend reinvestment,
+  - `datetime64[M]` to detect the first trading day of the month.
+- Export - `numpy.savetxt` with `dtype=object` for mixed types.
 
 ## Interface
 

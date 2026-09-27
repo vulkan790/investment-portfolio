@@ -1,9 +1,28 @@
+import numpy
 import matplotlib.pyplot as plt
 from PyQt5 import uic
+from PyQt5.QtCore import QThread, pyqtSignal
 from PyQt5.QtWidgets import QMainWindow, QApplication, QVBoxLayout
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from core import *
+
+class PortfolioWorker(QThread):
+    done = pyqtSignal(object, object)
+    error = pyqtSignal(object)
+
+    def __init__(self, tickers, monthly):
+        super().__init__()
+        self.tickers = tickers
+        self.monthly = monthly
+
+    def run(self):
+        try:
+            common_dates, price_mat, div_mat = build_common_calendar_sync(self.tickers)
+            dates_arr, result = simulate_portfolio(common_dates, price_mat, div_mat, self.tickers, self.monthly)
+            self.done.emit(dates_arr, result)
+        except Exception as e:
+            self.error.emit(str(e))
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -30,6 +49,9 @@ class MainWindow(QMainWindow):
         self.btnSave.setEnabled(False)
         self.labelTotal.setText("Итоговая стоимость: 0 руб.")
         self.current_result = None
+        self.current_dates = None
+        self.worker = None
+        self.btnClear.clicked.connect(self.on_clear)
 
     def _load_tickers_from_file(self) -> List[str]:
         try:
@@ -71,33 +93,46 @@ class MainWindow(QMainWindow):
             self.labelStatus.setText("Ошибка: выберите 5 разных тикеров")
             return
 
+        if self.worker is not None and self.worker.isRunning():
+            return
+
         self.labelStatus.setText("Идёт расчёт...")
-        QApplication.processEvents()
+        self.btnCalculate.setEnabled(False)
+        self.btnClear.setEnabled(False)
+        self.btnSave.setEnabled(False)
 
-        try:
-            common_dates, prices, dividends = build_common_calendar_sync(tickers)
-            result = simulate_portfolio(common_dates, prices, dividends, tickers, monthly)
+        self.worker = PortfolioWorker(tickers, monthly)
+        self.worker.done.connect(self._on_calc_done)
+        self.worker.error.connect(self._on_calc_error)
+        self.worker.start()
 
-            self.current_result = result
-            self._plot_result(result)
+    def _on_calc_done(self, dates_arr, result):
+        self.current_result = result
+        self.current_dates = dates_arr
+        self._plot_result(dates_arr, result)
 
-            final_value = result[-1][1]
-            total_invested = result[-1][2]
-            profit = final_value - total_invested
+        final_value = float(result[-1, 1])
+        total_invested = float(result[-1, 2])
+        profit = final_value - total_invested
 
-            self.labelTotal.setText(f"Итог: {final_value:,.0f} руб. | " f"Внесено: {total_invested:,.0f} руб. | " f"Прибыль: {profit:,.0f} руб.")
-            self.labelStatus.setText("Расчёт завершён")
-            self.btnSave.setEnabled(True)
-            self.statusbar.showMessage(f"Период: {result[0][0]} — {result[-1][0]} | " f"Доходность: {(profit / total_invested * 100):.1f}%")
+        self.labelTotal.setText(f"Итог: {final_value:,.0f} руб. | " f"Внесено: {total_invested:,.0f} руб. | " f"Прибыль: {profit:,.0f} руб.")
+        self.labelStatus.setText("Расчёт завершён")
+        self.btnCalculate.setEnabled(True)
+        self.btnClear.setEnabled(True)
+        self.btnSave.setEnabled(True)
 
-        except Exception as e:
-            self.labelStatus.setText(f"Ошибка: {str(e)[:60]}")
-            self.statusbar.showMessage(f"Ошибка: {e}")
+        self.statusbar.showMessage(f"Период: {dates_arr[0]} — {dates_arr[-1]} | " f"Доходность: {(profit / total_invested * 100):.1f}%")
 
-    def _plot_result(self, result: List[Tuple[date, float, float]]):
-        dates = [r[0] for r in result]
-        values = [r[1] for r in result]
-        invested = [r[2] for r in result]
+    def _on_calc_error(self, msg):
+        self.labelStatus.setText(f"Ошибка: {msg[:60]}")
+        self.statusbar.showMessage(f"Ошибка: {msg}")
+        self.btnCalculate.setEnabled(True)
+        self.btnClear.setEnabled(True)
+        self.btnSave.setEnabled(False)
+
+    def _plot_result(self, dates: numpy.ndarray, result: numpy.ndarray):
+        values = result[:, 1]
+        invested = result[:, 2]
 
         self.figure.clear()
 
@@ -121,6 +156,34 @@ class MainWindow(QMainWindow):
         if self.current_result is None:
             return
 
-        filename = "portfolio_graph.png"
-        self.figure.savefig(filename, dpi=150, bbox_inches="tight")
-        self.statusbar.showMessage(f"График сохранён как {filename}")
+        png_name = "portfolio_graph.png"
+        self.figure.savefig(png_name, dpi=150, bbox_inches="tight")
+
+        csv_name = "portfolio_data.csv"
+        T = len(self.current_dates)
+        data = numpy.empty((T, 3), dtype=object)
+        data[:, 0] = self.current_dates.astype(str)
+        data[:, 1] = self.current_result[:, 1]
+        data[:, 2] = self.current_result[:, 2]
+
+        numpy.savetxt(csv_name, data, delimiter=",", header="Date,Value,Invested", comments="", fmt="%s,%.2f,%.2f", encoding="utf-8")
+
+        self.statusbar.showMessage(f"Сохранено: {png_name} и {csv_name}")
+
+    def on_clear(self):
+        self.figure.clear()
+        self.canvas.draw()
+
+        self.current_result = None
+        self.current_dates = None
+
+        self.labelTotal.setText("Итоговая стоимость: 0 руб.")
+        self.labelStatus.setText("Тикеры выбраны")
+        self.btnSave.setEnabled(False)
+        self.statusbar.showMessage("Очищено")
+
+    def closeEvent(self, event):
+        if self.worker is not None and self.worker.isRunning():
+            self.worker.terminate()
+            self.worker.wait()
+        event.accept()
