@@ -55,17 +55,18 @@ python main.py
 └── README.md            # Документация
 ```
 
-## Как устроено ядро (NumPy)
+## Как устроено ядро
 
-- `build_common_calendar_sync` загружает все тикеры и выравнивает их по
-  общему торговому календарю через `numpy.intersect1d` + `numpy.searchsorted`.
-- На выходе - две матрицы: `price_mat (T, N)` и `div_mat (T, N)`.
+- `build_common_calendar_sync` загружает тикеры через `pandas.read_csv`
+  и выравнивает их по общему торговому календарю через
+  `pandas.DataFrame(dict).dropna()` + `.reindex().fillna(0)`.
+- На выходе - две матрицы NumPy: `price_mat (T, N)` и `div_mat (T, N)`.
 - `simulate_portfolio` итерирует по дням, использует:
   - `numpy.concatenate` для маски ежемесячных пополнений,
   - `@` (матричное умножение) для стоимости портфеля,
   - broadcasting для реинвестирования дивидендов,
   - `datetime64[M]` для определения первого торгового дня месяца.
-- Экспорт - `numpy.savetxt` с `dtype=object` для смешанных типов.
+- Экспорт - `pandas.DataFrame.to_csv` (смешанные типы из коробки).
 
 ## Интерфейс
 
@@ -144,17 +145,18 @@ python main.py
 └── README.md             # Documentation
 ```
 
-## NumPy core design
+## Core design
 
-- `build_common_calendar_sync` loads all tickers and aligns them to a
-  common trading calendar via `numpy.intersect1d` + `numpy.searchsorted`.
-- Returns two matrices: `price_mat (T, N)` and `div_mat (T, N)`.
+- `build_common_calendar_sync` loads tickers via `pandas.read_csv`
+  and aligns them to a common trading calendar via
+  `pandas.DataFrame(dict).dropna()` + `.reindex().fillna(0)`.
+- Returns two NumPy matrices: `price_mat (T, N)` and `div_mat (T, N)`.
 - `simulate_portfolio` iterates over days and uses:
   - `numpy.concatenate` to build the monthly top-up mask,
   - `@` (matrix multiplication) for portfolio value,
   - broadcasting for dividend reinvestment,
   - `datetime64[M]` to detect the first trading day of the month.
-- Export - `numpy.savetxt` with `dtype=object` for mixed types.
+- Export - `pandas.DataFrame.to_csv` (mixed types out of the box).
 
 ## Interface
 
