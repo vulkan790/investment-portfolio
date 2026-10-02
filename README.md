@@ -14,6 +14,7 @@
 
 - **Python** - язык программирования
 - **NumPy** - вся математика портфеля (матрицы цен, матричное умножение и другие операции)
+- **pandas** - I/O и выравнивание данных (Загрузка CSV, общий календарь)
 - **aiohttp** - HTTP - запросы
 - **PyQt5 + Qt Designer** - GUI
 - **matplotlib** - графики
@@ -32,7 +33,7 @@ cd investment-portfolio
 2) Установить все требуемые зависимости
 
 ```
-pip install aiohttp numpy matplotlib PyQt5
+pip install aiohttp numpy pandas matplotlib PyQt5
 ```
 
 3) Запустить GUI
@@ -102,6 +103,7 @@ An educational service demonstrating the benefits of the "buy and hold" strategy
 
 - **Python** - programming language
 - **NumPy** - all mathematics of the portfolio (price matrices, matrix multiplication and other operations)
+- **pandas** - I/O and data alignment (Import CSV, common calendar)
 - **aiohttp** - HTTP requests
 - **PyQt5 + Qt Designer** - GUI
 - **matplotlib** - charts
@@ -120,7 +122,7 @@ cd investment-portfolio
 2) Install all required dependencies
 
 ```
-pip install aiohttp numpy matplotlib PyQt5
+pip install aiohttp numpy pandas matplotlib PyQt5
 ```
 
 3) Launch the GUI

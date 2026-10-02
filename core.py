@@ -1,6 +1,7 @@
 import asyncio
 import aiohttp
 import numpy
+import pandas
 import csv
 from concurrent.futures import *
 from datetime import *
@@ -180,128 +181,41 @@ def calc_total_return(prices: numpy.ndarray, dividends: numpy.ndarray, dates: nu
 
     return numpy.column_stack([dates.astype(str), prices, shares, shares * prices])
 
-def load_prices(ticker: str) -> Tuple[numpy.ndarray, numpy.ndarray]:
-    dates, prices = [], []
-    file_path = f"data/{ticker}_prices.csv"
+def load_prices(ticker: str) -> pandas.Series:
+    return pandas.read_csv(f"data/{ticker}_prices.csv", parse_dates=["Date"]).set_index("Date")["Close"].sort_index()
 
-    with open(file_path, "r", newline="", encoding="utf-8") as f:
-        reader = csv.reader(f)
-        next(reader)
-
-        for row in reader:
-            dates.append(row[0])
-            prices.append(float(row[1]))
-
-    return (
-        numpy.array(dates, dtype="datetime64[D]"),
-        numpy.array(prices, dtype=numpy.float64)
-    )
-
-def load_dividends(ticker: str) -> Tuple[numpy.ndarray, numpy.ndarray]:
-    dates, value = [], []
-    file_path = f"data/{ticker}_dividends.csv"
-
+def load_dividends(ticker: str) -> pandas.Series:
     try:
-        with open(file_path, "r", newline="", encoding="utf-8") as f:
-            reader = csv.reader(f)
-            next(reader)
-
-            for row in reader:
-                dates.append(row[0])
-                value.append(float(row[1]))
-
+        return pandas.read_csv(f"data/{ticker}_dividends.csv", parse_dates=["Date"]).set_index("Date")["Dividend"].sort_index()
     except FileNotFoundError:
-        return (
-            numpy.array([], dtype="datetime64[D]"),
-            numpy.array([], dtype=numpy.float64)
-        )
+        return pandas.Series(dtype=float, name="Dividend")
 
-    d = numpy.array(dates, dtype="datetime64[D]")
-    v = numpy.array(value, dtype=numpy.float64)
-
-    order = numpy.argsort(d)
-    return d[order], v[order]
-
-def load_ticker_data(ticker: str) -> Tuple[str, numpy.ndarray, numpy.ndarray, numpy.ndarray, numpy.ndarray]:
-    dates, prices = load_prices(ticker)
-    div_dates, div_values = load_dividends(ticker)
-    return ticker, dates, prices, div_dates, div_values
+def load_ticker_data(ticker: str) -> Tuple[str, pandas.Series, pandas.Series]:
+    return ticker, load_prices(ticker), load_dividends(ticker)
 
 async def build_common_calendar(tickers: list, executor: ThreadPoolExecutor) -> Tuple[numpy.ndarray, numpy.ndarray, numpy.ndarray]:
     loop = asyncio.get_running_loop()
     tasks = [loop.run_in_executor(executor, load_ticker_data, t) for t in tickers]
     results = await asyncio.gather(*tasks)
 
-    if not results:
-        return (
-            numpy.array([], dtype="datetime64[D]"),
-            numpy.zeros((0, len(tickers)), dtype=numpy.float64),
-            numpy.zeros((0, len(tickers)), dtype=numpy.float64),
-        )
+    prices = {t: p for t, p, _ in results}
+    divs = {t: d for t, _, d in results}
 
-    all_dates = [r[1] for r in results]
+    price_df = pandas.DataFrame(prices).dropna()
+    divs_df = pandas.DataFrame(divs).reindex(price_df.index).fillna(0)
 
-    common = all_dates[0]
-    for d in all_dates[1:]:
-        common = numpy.intersect1d(common, d)
-
-    T = len(common)
-    N = len(tickers)
-    price_mat = numpy.zeros((T, N), dtype=numpy.float64)
-    div_mat = numpy.zeros((T, N), dtype=numpy.float64)
-
-    for j, (_, dates, p_arr, div_dates, div_values) in enumerate(results):
-        idx = numpy.searchsorted(dates, common)
-        idx_c = numpy.clip(idx, 0, len(dates) - 1)
-        valid = (idx < len(dates)) & (dates[idx_c] == common)
-        price_mat[valid, j] = p_arr[idx[valid]]
-
-        if len(div_dates) > 0:
-            idx_d = numpy.searchsorted(div_dates, common)
-            idx_dc = numpy.clip(idx_d, 0, len(div_dates) - 1)
-            valid_d = (idx_d < len(div_dates)) & (div_dates[idx_dc] == common)
-            div_mat[valid_d, j] = div_values[idx_d[valid_d]]
-
-    return common, price_mat, div_mat
+    return price_df.index.values, price_df.values, divs_df.values
 
 def build_common_calendar_sync(tickers: List[str]) -> Tuple[numpy.ndarray, numpy.ndarray, numpy.ndarray]:
-    loaded = []
-    all_dates = []
-    for t in tickers:
-        _, dates, p_arr, div_dates, div_values = load_ticker_data(t)
-        loaded.append((t, dates, p_arr, div_dates, div_values))
-        all_dates.append(dates)
+    loaded = [load_ticker_data(t) for t in tickers]
 
-    if not all_dates:
-        return (
-            numpy.array([], dtype="datetime64[D]"),
-            numpy.zeros((0, len(tickers)), dtype=numpy.float64),
-            numpy.zeros((0, len(tickers)), dtype=numpy.float64),
-        )
+    prices = {t: p for t, p, _ in loaded}
+    divs = {t: d for t, _, d in loaded}
 
-    common = all_dates[0]
-    for d in all_dates[1:]:
-        common = numpy.intersect1d(common, d)
+    price_df = pandas.DataFrame(prices).dropna()
+    divs_df = pandas.DataFrame(divs).reindex(price_df.index).fillna(0)
 
-    T = len(common)
-    N = len(tickers)
-
-    price_mat = numpy.zeros((T, N), dtype=numpy.float64)
-    div_mat = numpy.zeros((T, N), dtype=numpy.float64)
-
-    for j, (t, dates, p_arr, div_dates, div_values) in enumerate(loaded):
-        idx = numpy.searchsorted(dates, common)
-        idx_c = numpy.clip(idx, 0, len(dates) - 1)
-        valid = (idx < len(dates)) & (dates[idx_c] == common)
-        price_mat[valid, j] = p_arr[idx[valid]]
-
-        if len(div_dates) > 0:
-            idx_d = numpy.searchsorted(div_dates, common)
-            idx_dc = numpy.clip(idx_d, 0, len(div_dates) - 1)
-            valid_d = (idx_d < len(div_dates)) & (div_dates[idx_dc] == common)
-            div_mat[valid_d, j] = div_values[idx_d[valid_d]]
-
-    return common, price_mat, div_mat
+    return price_df.index.values, price_df.values, divs_df.values
 
 def simulate_portfolio(common_data: numpy.ndarray, price_mat: numpy.ndarray, div_mat: numpy.ndarray, tickers: List[str], monthly_amount: float) -> Tuple[numpy.ndarray, numpy.ndarray]:
     T, N = price_mat.shape

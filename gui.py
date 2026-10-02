@@ -1,4 +1,4 @@
-import numpy
+import pandas
 import matplotlib.pyplot as plt
 from PyQt5 import uic
 from PyQt5.QtCore import QThread, pyqtSignal
@@ -160,13 +160,12 @@ class MainWindow(QMainWindow):
         self.figure.savefig(png_name, dpi=150, bbox_inches="tight")
 
         csv_name = "portfolio_data.csv"
-        T = len(self.current_dates)
-        data = numpy.empty((T, 3), dtype=object)
-        data[:, 0] = self.current_dates.astype(str)
-        data[:, 1] = self.current_result[:, 1]
-        data[:, 2] = self.current_result[:, 2]
-
-        numpy.savetxt(csv_name, data, delimiter=",", header="Date,Value,Invested", comments="", fmt="%s,%.2f,%.2f", encoding="utf-8")
+        df = pandas.DataFrame({
+            "Date": pandas.to_datetime(self.current_dates),
+            "Value": self.current_result[:, 1],
+            "Invested": self.current_result[:, 2]
+        })
+        df.to_csv(csv_name, index=False)
 
         self.statusbar.showMessage(f"Сохранено: {png_name} и {csv_name}")
 
